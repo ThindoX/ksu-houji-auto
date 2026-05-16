@@ -45,6 +45,14 @@ jobs:
         mkdir -p drivers/misc/hwid
         touch drivers/misc/hwid/Kconfig
 
+        # ✅ 5.5. 修复 techpack stub 问题
+    - name: Fix missing techpack stub
+      run: |
+        cd kernel
+        mkdir -p techpack/stub
+        cat > techpack/stub/Makefile << 'EOF'
+
+
     # ✅ 6. 编译（自动识别 config，避免报错）
     - name: Build Kernel (Auto config)
       run: |
