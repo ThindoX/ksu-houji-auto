@@ -22,7 +22,7 @@ jobs:
         sudo apt install -y \
           git bc bison flex zip curl \
           libssl-dev libelf-dev \
-          clang lld unzip python3
+          clang lld llvm unzip python3
 
     # ✅ 3. 拉 kernel
     - name: Clone kernel
