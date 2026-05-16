@@ -1,0 +1,60 @@
+name: Build KernelSU Xiaomi14
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install deps
+      run: |
+        sudo apt update
+        sudo apt install -y git bc bison flex zip curl \
+          libssl-dev libelf-dev clang lld unzip
+
+    - name: Clone Kernel
+      run: |
+        git clone https://github.com/mvaisakh/xiaomi14 kernel
+        cd kernel
+        git submodule update --init --recursive
+
+    - name: Setup KSU
+      run: |
+        cd kernel
+        curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU/main/kernel/setup.sh | bash -
+
+    - name: Build Kernel
+      run: |
+        cd kernel
+        export ARCH=arm64
+        export CC=clang
+        export LLVM=1
+
+        make O=out houji_defconfig
+        echo "CONFIG_KSU=y" >> out/.config
+
+        make -j$(nproc) O=out
+
+    - name: Download boot.img
+      run: |
+        curl -L -o boot.img https://example.com/boot.img
+
+    - name: Patch boot
+      run: |
+        chmod +x tools/magiskboot
+        ./tools/magiskboot unpack boot.img
+
+        cp kernel/out/arch/arm64/boot/Image kernel
+
+        ./tools/magiskboot repack boot.img boot_patched.img
+
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: boot_patched
+        path: boot_patched.img
