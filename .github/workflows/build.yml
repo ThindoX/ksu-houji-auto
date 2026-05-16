@@ -1,4 +1,4 @@
-name: Build KernelSU Xiaomi14
+name: Build KernelSU Xiaomi14 (FULL AUTO)
 
 on:
   workflow_dispatch:
@@ -11,51 +11,73 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+
+    # ✅ 1. 拉仓库
     - name: Checkout
       uses: actions/checkout@v4
 
+    # ✅ 2. 安装依赖
     - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y git bc bison flex zip curl \
-          libssl-dev libelf-dev clang lld unzip python3
+        sudo apt install -y \
+          git bc bison flex zip curl \
+          libssl-dev libelf-dev \
+          clang lld unzip python3
 
-    - name: Clone Kernel
+    # ✅ 3. 拉 kernel
+    - name: Clone kernel
       run: |
         git clone https://github.com/mvaisakh/xiaomi14 kernel
         cd kernel
         git submodule update --init --recursive
 
-        make houji_defconfig
-
-    - name: Setup KSU
+    # ✅ 4. 注入 KernelSU（修复404）
+    - name: Setup KernelSU
       run: |
         cd kernel
-        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+        curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -
 
-    - name: Fix hwid issue
+    # ✅ 5. 修复 hwid 错误（关键！！）
+    - name: Fix hwid error
       run: |
-         cd kernel
-         mkdir -p drivers/misc/hwid
-         echo "" > drivers/misc/hwid/Kconfig
-         sed -i '/hwid/d' drivers/misc/Kconfig || true    
+        cd kernel
 
+        echo "==== BEFORE FIX ===="
+        grep -n hwid drivers/misc/Kconfig || true
+
+        # 删除引用
+        sed -i '/hwid/d' drivers/misc/Kconfig || true
+
+        # 防止其他引用
+        mkdir -p drivers/misc/hwid
+        touch drivers/misc/hwid/Kconfig
+
+        echo "==== AFTER FIX ===="
+        grep -n hwid drivers/misc/Kconfig || true
+
+    # ✅ 6. 编译 kernel
     - name: Build Kernel
       run: |
         cd kernel
+
         export ARCH=arm64
+        export SUBARCH=arm64
         export CC=clang
         export LLVM=1
+        export LLVM_IAS=1
 
         make O=out houji_defconfig
+
+        # 强制开启 KSU
         echo "CONFIG_KSU=y" >> out/.config
 
         make -j$(nproc) O=out
 
-        echo "==== CHECK Image ===="
+        echo "==== CHECK IMAGE ===="
         ls -lh out/arch/arm64/boot/
 
-    # ✅ 检查 boot 下载
+    # ✅ 7. 获取 boot.img（你必须提前上传）
     - name: Get boot.img
       run: |
         curl -L \
@@ -63,40 +85,3 @@ jobs:
         -o boot.img
 
         echo "==== CHECK boot.img ===="
-        ls -lh boot.img
-
-    # ✅ 检查 magiskboot
-    - name: Prepare MagiskBoot
-      run: |
-        curl -L -o magisk.apk https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk
-
-        unzip magisk.apk lib/arm64-v8a/libmagiskboot.so
-
-        echo "==== CHECK extracted ===="
-        ls lib/arm64-v8a/
-
-        mv lib/arm64-v8a/libmagiskboot.so magiskboot
-        chmod +x magiskboot
-
-        echo "==== CHECK magiskboot ===="
-        ls -lh magiskboot
-        file magiskboot
-
-    # ✅ patch（关键）
-    - name: Patch boot
-      run: |
-        ./magiskboot unpack boot.img
-
-        cp kernel/out/arch/arm64/boot/Image kernel
-
-        ./magiskboot repack boot.img boot_patched.img
-
-    - name: Verify
-      run: |
-        ls -lh boot_patched.img
-
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: boot_patched
-        path: boot_patched.img
