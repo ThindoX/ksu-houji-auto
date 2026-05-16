@@ -1,4 +1,4 @@
-name: Build KernelSU Xiaomi14 (GKI FULL AUTO)
+name: Build KernelSU-Next Xiaomi14 (FINAL)
 
 on:
   workflow_dispatch:
@@ -12,9 +12,8 @@ jobs:
 
     steps:
 
-    # ✅ 1. 拉仓库
-    - name: Checkout
-      uses: actions/checkout@v4
+    # ✅ 1. Checkout
+    - uses: actions/checkout@v4
 
     # ✅ 2. 安装依赖
     - name: Install dependencies
@@ -25,78 +24,84 @@ jobs:
           libssl-dev libelf-dev \
           clang lld unzip python3
 
-    # ✅ 3. 拉 kernel 源码
+    # ✅ 3. 拉 kernel
     - name: Clone kernel
       run: |
         git clone https://github.com/mvaisakh/xiaomi14 kernel
         cd kernel
         git submodule update --init --recursive
 
-    # ✅ 4. 注入 KernelSU
-    - name: Setup KernelSU
+    # ✅ 4. KernelSU-Next（官方方式）
+    - name: Setup KernelSU-Next
       run: |
         cd kernel
         curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 
-    # ✅ 5. 修复 hwid 报错（必须）
-    - name: Fix hwid error
+    # ✅ 5. 修复 hwid 问题（必需）
+    - name: Fix hwid
       run: |
         cd kernel
         sed -i '/hwid/d' drivers/misc/Kconfig || true
         mkdir -p drivers/misc/hwid
         touch drivers/misc/hwid/Kconfig
 
-    # ✅ 6. 编译 GKI 2.0 内核
-    - name: Build Kernel (GKI 2.0)
+    # ✅ 6. 编译（自动识别 config，避免报错）
+    - name: Build Kernel (Auto config)
       run: |
         cd kernel
 
         export ARCH=arm64
-        export SUBARCH=arm64
         export CC=clang
         export LLVM=1
         export LLVM_IAS=1
 
         mkdir -p out
 
-        echo "==== STEP 1: LOAD GKI DEFCONFIG ===="
+        echo "==== STEP 1: GKI ===="
         make O=out gki_defconfig
 
-        echo "==== STEP 2: MERGE XIAOMI CONFIG ===="
+        echo "==== STEP 2: FIND HOUJI CONFIG ===="
+        CONFIG_FILE=$(find arch/arm64/configs -type f | grep -i houji | head -n 1)
+
+        echo "Using config: $CONFIG_FILE"
+
+        if [ -z "$CONFIG_FILE" ]; then
+          echo "❌ No houji config found!"
+          exit 1
+        fi
+
+        echo "==== STEP 3: MERGE CONFIG ===="
         scripts/kconfig/merge_config.sh -m -r -O out \
           out/.config \
-          arch/arm64/configs/vendor/xiaomi_houji.config
+          $CONFIG_FILE
 
-        echo "==== STEP 3: ENABLE KERNELSU ===="
+        echo "==== STEP 4: ENABLE KSU ===="
         echo "CONFIG_KSU=y" >> out/.config
-        echo "CONFIG_KSU_DEBUG=n" >> out/.config
 
-        echo "==== STEP 4: FINAL CONFIG ===="
+        echo "==== STEP 5: FINAL CONFIG ===="
         make O=out olddefconfig
 
-        echo "==== STEP 5: BUILD ===="
+        echo "==== STEP 6: BUILD ===="
         make -j$(nproc) O=out
 
         echo "==== BUILD RESULT ===="
         ls -lh out/arch/arm64/boot/
 
-    # ✅ 7. 获取你上传的 boot.img（必须先上传）
+    # ✅ 7. 获取 boot.img（你必须提前上传）
     - name: Get boot.img
       run: |
         curl -L \
         https://github.com/${{ github.repository }}/releases/download/boot-stock/boot.img \
         -o boot.img
 
-        echo "==== CHECK boot.img ===="
+        echo "==== CHECK boot ===="
         ls -lh boot.img
 
     # ✅ 8. 获取 magiskboot（自动）
-    - name: Prepare MagiskBoot
+    - name: Prepare magiskboot
       run: |
         curl -L -o magisk.apk https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk
-
         unzip magisk.apk lib/arm64-v8a/libmagiskboot.so
-
         mv lib/arm64-v8a/libmagiskboot.so magiskboot
         chmod +x magiskboot
 
@@ -104,7 +109,7 @@ jobs:
         ls -lh magiskboot
         file magiskboot
 
-    # ✅ 9. Patch boot.img
+    # ✅ 9. patch boot
     - name: Patch boot
       run: |
         ./magiskboot unpack boot.img
@@ -115,7 +120,7 @@ jobs:
         ./magiskboot repack boot.img boot_patched.img
 
     # ✅ 10. 检查输出
-    - name: Verify output
+    - name: Verify
       run: |
         ls -lh boot_patched.img
 
