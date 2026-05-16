@@ -36,44 +36,6 @@ jobs:
     - name: Setup KernelSU
       run: |
         cd kernel
-        name: Build KernelSU Xiaomi14 (GKI FULL AUTO)
-
-on:
-  workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-
-    steps:
-
-    # ✅ 1. 拉仓库
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    # ✅ 2. 安装依赖
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          git bc bison flex zip curl \
-          libssl-dev libelf-dev \
-          clang lld unzip python3
-
-    # ✅ 3. 拉 kernel 源码
-    - name: Clone kernel
-      run: |
-        git clone https://github.com/mvaisakh/xiaomi14 kernel
-        cd kernel
-        git submodule update --init --recursive
-
-    # ✅ 4. 注入 KernelSU
-    - name: Setup KernelSU
-      run: |
-        cd kernel
         curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 
     # ✅ 5. 修复 hwid 报错（必须）
@@ -84,13 +46,82 @@ jobs:
         mkdir -p drivers/misc/hwid
         touch drivers/misc/hwid/Kconfig
 
-
-
-    # ✅ 5. 修复 hwid 报错（必须）
-    - name: Fix hwid error
+    # ✅ 6. 编译 GKI 2.0 内核
+    - name: Build Kernel (GKI 2.0)
       run: |
         cd kernel
-        sed -i '/hwid/d' drivers/misc/Kconfig || true
-        mkdir -p drivers/misc/hwid
-        touch drivers/misc/hwid/Kconfig
 
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CC=clang
+        export LLVM=1
+        export LLVM_IAS=1
+
+        mkdir -p out
+
+        echo "==== STEP 1: LOAD GKI DEFCONFIG ===="
+        make O=out gki_defconfig
+
+        echo "==== STEP 2: MERGE XIAOMI CONFIG ===="
+        scripts/kconfig/merge_config.sh -m -r -O out \
+          out/.config \
+          arch/arm64/configs/vendor/xiaomi_houji.config
+
+        echo "==== STEP 3: ENABLE KERNELSU ===="
+        echo "CONFIG_KSU=y" >> out/.config
+        echo "CONFIG_KSU_DEBUG=n" >> out/.config
+
+        echo "==== STEP 4: FINAL CONFIG ===="
+        make O=out olddefconfig
+
+        echo "==== STEP 5: BUILD ===="
+        make -j$(nproc) O=out
+
+        echo "==== BUILD RESULT ===="
+        ls -lh out/arch/arm64/boot/
+
+    # ✅ 7. 获取你上传的 boot.img（必须先上传）
+    - name: Get boot.img
+      run: |
+        curl -L \
+        https://github.com/${{ github.repository }}/releases/download/boot-stock/boot.img \
+        -o boot.img
+
+        echo "==== CHECK boot.img ===="
+        ls -lh boot.img
+
+    # ✅ 8. 获取 magiskboot（自动）
+    - name: Prepare MagiskBoot
+      run: |
+        curl -L -o magisk.apk https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk
+
+        unzip magisk.apk lib/arm64-v8a/libmagiskboot.so
+
+        mv lib/arm64-v8a/libmagiskboot.so magiskboot
+        chmod +x magiskboot
+
+        echo "==== CHECK magiskboot ===="
+        ls -lh magiskboot
+        file magiskboot
+
+    # ✅ 9. Patch boot.img
+    - name: Patch boot
+      run: |
+        ./magiskboot unpack boot.img
+
+        echo "==== REPLACE KERNEL ===="
+        cp kernel/out/arch/arm64/boot/Image kernel
+
+        ./magiskboot repack boot.img boot_patched.img
+
+    # ✅ 10. 检查输出
+    - name: Verify output
+      run: |
+        ls -lh boot_patched.img
+
+    # ✅ 11. 上传结果
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: boot_patched
+        path: boot_patched.img
