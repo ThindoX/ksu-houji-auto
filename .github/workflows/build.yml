@@ -29,7 +29,7 @@ jobs:
     - name: Setup KSU
       run: |
         cd kernel
-        curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU/main/kernel/setup.sh | bash -
+        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 
     - name: Build Kernel
       run: |
