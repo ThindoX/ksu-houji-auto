@@ -1,4 +1,4 @@
-name: Build KernelSU Xiaomi14 (FULL AUTO)
+name: Build KernelSU Xiaomi14 (GKI FULL AUTO)
 
 on:
   workflow_dispatch:
@@ -25,66 +25,72 @@ jobs:
           libssl-dev libelf-dev \
           clang lld unzip python3
 
-    # ✅ 3. 拉 kernel
+    # ✅ 3. 拉 kernel 源码
     - name: Clone kernel
       run: |
         git clone https://github.com/mvaisakh/xiaomi14 kernel
         cd kernel
         git submodule update --init --recursive
 
-    # ✅ 4. 注入 KernelSU（修复404）
+    # ✅ 4. 注入 KernelSU
     - name: Setup KernelSU
       run: |
         cd kernel
-        curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -
+        name: Build KernelSU Xiaomi14 (GKI FULL AUTO)
 
-    # ✅ 5. 修复 hwid 错误（关键！！）
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+
+    # ✅ 1. 拉仓库
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # ✅ 2. 安装依赖
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          git bc bison flex zip curl \
+          libssl-dev libelf-dev \
+          clang lld unzip python3
+
+    # ✅ 3. 拉 kernel 源码
+    - name: Clone kernel
+      run: |
+        git clone https://github.com/mvaisakh/xiaomi14 kernel
+        cd kernel
+        git submodule update --init --recursive
+
+    # ✅ 4. 注入 KernelSU
+    - name: Setup KernelSU
+      run: |
+        cd kernel
+        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+
+    # ✅ 5. 修复 hwid 报错（必须）
     - name: Fix hwid error
       run: |
         cd kernel
-
-        echo "==== BEFORE FIX ===="
-        grep -n hwid drivers/misc/Kconfig || true
-
-        # 删除引用
         sed -i '/hwid/d' drivers/misc/Kconfig || true
-
-        # 防止其他引用
         mkdir -p drivers/misc/hwid
         touch drivers/misc/hwid/Kconfig
 
-        echo "==== AFTER FIX ===="
-        grep -n hwid drivers/misc/Kconfig || true
 
-    # ✅ 6. 编译 kernel
-    - name: Find defconfig
+
+    # ✅ 5. 修复 hwid 报错（必须）
+    - name: Fix hwid error
       run: |
         cd kernel
-        echo "==== AVAILABLE DEFCONFIG ===="
-        ls arch/arm64/configs/
+        sed -i '/hwid/d' drivers/misc/Kconfig || true
+        mkdir -p drivers/misc/hwid
+        touch drivers/misc/hwid/Kconfig
 
-    - name: Build Kernel
-      run: |
-        cd kernel
-
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export CC=clang
-        export LLVM=1
-        export LLVM_IAS=1
-
-        # ✅ 用正确的 config（修改这里）
-        make O=out xiaomi_houji_defconfig
-
-        echo "CONFIG_KSU=y" >> out/.config
-
-        make -j$(nproc) O=out
-
-    # ✅ 7. 获取 boot.img（你必须提前上传）
-    - name: Get boot.img
-      run: |
-        curl -L \
-        https://github.com/${{ github.repository }}/releases/download/boot-stock/boot.img \
-        -o boot.img
-
-        echo "==== CHECK boot.img ===="
