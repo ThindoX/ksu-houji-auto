@@ -57,29 +57,29 @@ jobs:
         grep -n hwid drivers/misc/Kconfig || true
 
     # ✅ 6. 编译 kernel
-- name: Find defconfig
-  run: |
-    cd kernel
-    echo "==== AVAILABLE DEFCONFIG ===="
-    ls arch/arm64/configs/
+    - name: Find defconfig
+      run: |
+        cd kernel
+        echo "==== AVAILABLE DEFCONFIG ===="
+        ls arch/arm64/configs/
 
-- name: Build Kernel
-  run: |
-    cd kernel
+    - name: Build Kernel
+      run: |
+        cd kernel
 
-    export ARCH=arm64
-    export SUBARCH=arm64
-    export CC=clang
-    export LLVM=1
-    export LLVM_IAS=1
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CC=clang
+        export LLVM=1
+        export LLVM_IAS=1
 
-    # ✅ 用正确的 config（修改这里）
-    make O=out xiaomi_houji_defconfig
+        # ✅ 用正确的 config（修改这里）
+        make O=out xiaomi_houji_defconfig
 
-    echo "CONFIG_KSU=y" >> out/.config
+        echo "CONFIG_KSU=y" >> out/.config
 
-    make -j$(nproc) O=out
-    
+        make -j$(nproc) O=out
+
     # ✅ 7. 获取 boot.img（你必须提前上传）
     - name: Get boot.img
       run: |
