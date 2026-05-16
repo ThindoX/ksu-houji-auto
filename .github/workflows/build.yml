@@ -11,59 +11,83 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-
     - name: Checkout
       uses: actions/checkout@v4
 
-    # ✅ 安装依赖
     - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y \
-          git bc bison flex zip curl \
-          libssl-dev libelf-dev \
-          clang lld unzip python3
+        sudo apt install -y git bc bison flex zip curl \
+          libssl-dev libelf-dev clang lld unzip python3
 
-    # ✅ 拉 kernel
-    - name: Clone Kernel Source
+    - name: Clone Kernel
       run: |
         git clone https://github.com/mvaisakh/xiaomi14 kernel
         cd kernel
         git submodule update --init --recursive
 
-    # ✅ 注入 KernelSU-Next
-    - name: Setup KernelSU-Next
+    - name: Setup KSU
       run: |
         cd kernel
         curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU/main/kernel/setup.sh | bash -
 
-    # ✅ 编译 kernel
     - name: Build Kernel
       run: |
         cd kernel
-
         export ARCH=arm64
-        export SUBARCH=arm64
         export CC=clang
         export LLVM=1
-        export LLVM_IAS=1
 
         make O=out houji_defconfig
-
-        # 强制开启 KSU（保险）
         echo "CONFIG_KSU=y" >> out/.config
 
         make -j$(nproc) O=out
 
-    # ✅ 获取你上传的 boot.img（必须先发 release）
-    - name: Get Stock Boot Image
+        echo "==== CHECK Image ===="
+        ls -lh out/arch/arm64/boot/
+
+    # ✅ 检查 boot 下载
+    - name: Get boot.img
       run: |
         curl -L \
         https://github.com/${{ github.repository }}/releases/download/boot-stock/boot.img \
         -o boot.img
 
-    # ✅ 自动提取 magiskboot（关键！不用手动）
+        echo "==== CHECK boot.img ===="
+        ls -lh boot.img
+
+    # ✅ 检查 magiskboot
     - name: Prepare MagiskBoot
       run: |
         curl -L -o magisk.apk https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk
+
         unzip magisk.apk lib/arm64-v8a/libmagiskboot.so
+
+        echo "==== CHECK extracted ===="
+        ls lib/arm64-v8a/
+
+        mv lib/arm64-v8a/libmagiskboot.so magiskboot
+        chmod +x magiskboot
+
+        echo "==== CHECK magiskboot ===="
+        ls -lh magiskboot
+        file magiskboot
+
+    # ✅ patch（关键）
+    - name: Patch boot
+      run: |
+        ./magiskboot unpack boot.img
+
+        cp kernel/out/arch/arm64/boot/Image kernel
+
+        ./magiskboot repack boot.img boot_patched.img
+
+    - name: Verify
+      run: |
+        ls -lh boot_patched.img
+
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: boot_patched
+        path: boot_patched.img
