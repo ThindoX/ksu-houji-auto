@@ -1,70 +1,69 @@
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-
 name: Build KernelSU Xiaomi14
 
 on:
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
+
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install deps
+    # ✅ 安装依赖
+    - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y git bc bison flex zip curl \
-          libssl-dev libelf-dev clang lld unzip
+        sudo apt install -y \
+          git bc bison flex zip curl \
+          libssl-dev libelf-dev \
+          clang lld unzip python3
 
-    - name: Clone Kernel
+    # ✅ 拉 kernel
+    - name: Clone Kernel Source
       run: |
         git clone https://github.com/mvaisakh/xiaomi14 kernel
         cd kernel
         git submodule update --init --recursive
 
-    - name: Setup KSU
+    # ✅ 注入 KernelSU-Next
+    - name: Setup KernelSU-Next
       run: |
         cd kernel
         curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU/main/kernel/setup.sh | bash -
 
+    # ✅ 编译 kernel
     - name: Build Kernel
       run: |
         cd kernel
+
         export ARCH=arm64
+        export SUBARCH=arm64
         export CC=clang
         export LLVM=1
+        export LLVM_IAS=1
 
         make O=out houji_defconfig
+
+        # 强制开启 KSU（保险）
         echo "CONFIG_KSU=y" >> out/.config
 
         make -j$(nproc) O=out
 
-    - name: Download boot.img
+    # ✅ 获取你上传的 boot.img（必须先发 release）
+    - name: Get Stock Boot Image
       run: |
-        curl -L -o boot.img https://example.com/boot.img
+        curl -L \
+        https://github.com/${{ github.repository }}/releases/download/boot-stock/boot.img \
+        -o boot.img
 
-    - name: Get MagiskBoot
-  run: |
-    curl -L -o magisk.apk https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk
-    unzip magisk.apk lib/arm64-v8a/libmagiskboot.so
-    mv lib/arm64-v8a/libmagiskboot.so magiskboot
-    chmod +x magiskboot    
-
-    - name: Patch boot
+    # ✅ 自动提取 magiskboot（关键！不用手动）
+    - name: Prepare MagiskBoot
       run: |
-        ./magiskboot unpack boot.img
-
-        cp kernel/out/arch/arm64/boot/Image kernel
-
-        ./tools/magiskboot repack boot.img boot_patched.img
-
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: boot_patched
-        path: boot_patched.img
+        curl -L -o magisk.apk https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk
+        unzip magisk.apk lib/arm64-v8a/libmagiskboot.so
