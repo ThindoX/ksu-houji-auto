@@ -26,10 +26,19 @@ jobs:
         cd kernel
         git submodule update --init --recursive
 
+        make houji_defconfig
+
     - name: Setup KSU
       run: |
         cd kernel
         curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+
+    - name: Fix hwid issue
+      run: |
+         cd kernel
+         mkdir -p drivers/misc/hwid
+         echo "" > drivers/misc/hwid/Kconfig
+         sed -i '/hwid/d' drivers/misc/Kconfig || true    
 
     - name: Build Kernel
       run: |
